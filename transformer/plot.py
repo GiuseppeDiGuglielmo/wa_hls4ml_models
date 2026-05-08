@@ -21,13 +21,17 @@ def plot_loss(train_losses, val_losses, outdir="results/plots"):
     plt.savefig(os.path.join(outdir, "loss.png"))
     plt.close()
 
-def plot_box_plots_symlog(y_pred, y_test, folder_name):
+def plot_box_plots_symlog(y_pred, y_test, folder_name, output_features=None):
     # Current order of columns: ["WorstLatency_hls", "IntervalMax_hls", "FF_hls", "LUT_hls", "BRAM_18K_hls", "DSP_hls"]
     # Want this order: BRAM, DSP, FF, LUT, CYCLES, II
     # prediction_labels =  ['BRAM', 'DSP', 'FF', 'LUT', 'CYCLES', 'II']
-    prediction_labels = ['CYCLES', 'FF', 'LUT', 'BRAM', 'DSP', 'II']
-    # indices in y_pred/y_test for: BRAM(4), DSP(5), FF(2), LUT(3), CYCLES(0), II(1)
-    plot_order = [4, 5, 2, 3, 0, 1] # Rework this to make more general
+    if output_features is not None:
+        prediction_labels = output_features
+        plot_order = list(range(len(output_features)))
+    else:
+        prediction_labels = ['CYCLES', 'FF', 'LUT', 'BRAM', 'DSP', 'II']
+        # indices in y_pred/y_test for: BRAM(4), DSP(5), FF(2), LUT(3), CYCLES(0), II(1)
+        plot_order = [4, 5, 2, 3, 0, 1]
 
     prediction_errors = []
     for i in plot_order:
@@ -241,13 +245,19 @@ def plot_results_simplified(name, mpl_plots, y_test, y_pred, output_features, fo
 
     if mpl_plots:
         plt.rcParams.update({"font.size": 24})
-        # Desired order: BRAM, DSP, FF, LUT, CYCLES, INTERVAL (not II)
-        desired_order = [3, 4, 1, 2, 0, 5]  # Indices for your arrays: BRAM, DSP, FF, LUT, CYCLES, II
-        label_names = ['BRAM', 'DSP', 'FF', 'LUT', 'CYCLES', 'INTERVAL']
+        # Use output_features to drive order; fall back to the original FPGA 6-target ordering
+        if output_features is not None and len(output_features) != 6:
+            desired_order = list(range(len(output_features)))
+            label_names = list(output_features)
+        else:
+            # Desired order: BRAM, DSP, FF, LUT, CYCLES, INTERVAL (not II)
+            desired_order = [3, 4, 1, 2, 0, 5]  # Indices for your arrays: BRAM, DSP, FF, LUT, CYCLES, II
+            label_names = ['BRAM', 'DSP', 'FF', 'LUT', 'CYCLES', 'INTERVAL']
 
         num_plots = len(desired_order)
         num_y = int(np.sqrt(num_plots))
-        num_x = int(np.ceil(np.sqrt(num_plots)))
+        num_y = max(num_y, 1)
+        num_x = int(np.ceil(num_plots / num_y))
         fig, axes = plt.subplots(num_y, num_x, figsize=(6 * num_x, 10))
         axes = np.reshape(axes, -1)
         fig.subplots_adjust(hspace=0.35, wspace=0.35)

@@ -21,6 +21,7 @@ def main():
     parser.add_argument("--epochs", type=int, default=200, help="Number of epochs to train")
     parser.add_argument("--lr", type=float, default=1e-5, help="Learning rate")
     parser.add_argument("--batch-size", type=int, default=512, help="Batch size")
+    parser.add_argument("--base-dir", type=str, default=None, help="Directory with train/val/test split .npy files (overrides hardcoded default)")
     args = parser.parse_args()    
 
     timestamp = datetime.now().strftime("%m_%d_%H_%M")
@@ -36,8 +37,7 @@ def main():
     else:
         outdir = f"new_results_plots/{timestamp}_{num_epochs}epochs_{learning_rate}lr_{BATCH_SIZE}bs"
 
-    # Config
-    output_features = ['CYCLES', 'FF', 'LUT', 'BRAM', 'DSP', 'II']
+    # Config (output_features resolved after dataloaders are created)
     # outdir = "results_and_plots/5_31_results_2_epochs_TESTING"
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -64,7 +64,10 @@ def main():
     #     )
 
 ## CHANGE BEFORE PUSH
-    base_dir = "../dataset/output/split_dataset/result/result/"  # UPDATE FOR THE JOB WITH NEW PATH
+    if args.base_dir:
+        base_dir = args.base_dir
+    else:
+        base_dir = "../dataset/output/split_dataset/result/result/"  # UPDATE FOR THE JOB WITH NEW PATH
     # base_dir = "/jason-pvc/june_wa-hls4ml/result/" # IN THE PVC
 
     train_loader, val_loader, test_loader, node_feature_dim, num_targets = create_dataloaders_from_split_data(
@@ -89,7 +92,17 @@ def main():
     for loader in [train_loader, val_loader, test_loader]:
         loader.dataset.mode = args.arch
 
-    model = TransformerRegressor().to(device)
+    # Derive output feature names from num_targets (fall back to generic names)
+    default_output_features = ['CYCLES', 'FF', 'LUT', 'BRAM', 'DSP', 'II']
+    asic_output_features    = ['LATENCY', 'AREA', 'THROUGHPUT']
+    if num_targets == len(asic_output_features):
+        output_features = asic_output_features
+    elif num_targets <= len(default_output_features):
+        output_features = default_output_features[:num_targets]
+    else:
+        output_features = [f'TARGET_{i}' for i in range(num_targets)]
+
+    model = TransformerRegressor(output_dim=num_targets).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     loss_fn = torch.nn.MSELoss()
 
@@ -161,7 +174,7 @@ def main():
     test_model_types = get_model_types(test_features_np)
     # END ADDITION
 
-    plot_box_plots_symlog(y_pred_denorm, y_true_denorm, folder_name=outdir)
+    plot_box_plots_symlog(y_pred_denorm, y_true_denorm, folder_name=outdir, output_features=output_features)
     plot_results_simplified(
         name="run1",
         mpl_plots=True,
