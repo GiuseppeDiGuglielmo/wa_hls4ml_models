@@ -79,7 +79,7 @@ def main():
             test_labels_path=os.path.join(base_dir, "test_labels.npy"),
             # stats_load_path=None,  # Will calculate from training data
             stats_load_path=os.path.join(base_dir, "lognormalization_stats.npy"),
-            # stats_save_path=os.path.join(base_dir, "lognormalization_stats.npy"),  # Save for future use
+            stats_save_path=os.path.join(base_dir, "lognormalization_stats.npy"),
             batch_size=BATCH_SIZE,
             num_workers=4,
             pin_memory=True if device.type == 'cuda' else False,
@@ -124,9 +124,10 @@ def main():
         )
         # Plot Loss
         plot_loss(train_losses, val_losses, outdir=os.path.join(outdir, "plots"))
-        # Save best model for convenience
-        model_path = os.path.join(best_model_dir, "model.pt")
-        torch.save(model.state_dict(), model_path)
+
+    # Load best checkpoint for evaluation
+    model_path = os.path.join(best_model_dir, "model.pt")
+    model.load_state_dict(torch.load(model_path, map_location=device))
 
     # Test Evaluation
     y_true, y_pred = test_model(model, test_loader, device)

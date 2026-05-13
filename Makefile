@@ -4,6 +4,8 @@ SHELL := /bin/bash
 # ── Configurable paths ────────────────────────────────────────────────────────
 VENV      ?= $(SCRATCH)/venv_wa_hls4ml_models
 PYTHON    := $(VENV)/bin/python
+ARCHIVE   ?=
+EXCLUDE   ?= run_20260504 run_20260505 run_20260506 run_20260507_143427
 RAW_DATA  ?=
 DATA_OUT  ?= $(SCRATCH)/catapult_asic_data
 SPLIT_DIR ?= $(DATA_OUT)/split
@@ -36,7 +38,9 @@ help:
 	@echo "  clean    Remove generated numpy arrays and split files"
 	@echo ""
 	@echo "Variables (override with VAR=value on the command line):"
-	@printf "  %-12s  Path to raw Catapult JSON reports directory  %s\n" "RAW_DATA"  "(required for 'data')"
+	@printf "  %-12s  Archive root with run_*/reports/ layout (preferred)\n" "ARCHIVE"
+	@printf "  %-12s  Runs to skip when using ARCHIVE  [%s]\n" "EXCLUDE"   "$(EXCLUDE)"
+	@printf "  %-12s  Flat dir of JSON reports (alternative to ARCHIVE)\n" "RAW_DATA"
 	@printf "  %-12s  Output dir for numpy arrays    [%s]\n" "DATA_OUT"  "$(DATA_OUT)"
 	@printf "  %-12s  Output dir for train/val/test  [%s]\n" "SPLIT_DIR" "$(SPLIT_DIR)"
 	@printf "  %-12s  Path to virtual environment    [%s]\n" "VENV"      "$(VENV)"
@@ -49,7 +53,7 @@ help:
 	@echo "  salloc -N 1 -C gpu -q interactive -t 01:00:00 --gpus-per-node=1 -A amsc011"
 	@echo "  module load pytorch/2.8.0"
 	@echo "  make env"
-	@echo "  make data split RAW_DATA=/path/to/reports/raw"
+	@echo "  make data split ARCHIVE=/global/cfs/cdirs/amsc011/shared/wa-hls4ml-catapult"
 	@echo "  make train EPOCHS=200"
 	@echo ""
 	@echo "Smoke-test on CPU (login node, no GPU required):"
@@ -83,12 +87,20 @@ $(PYTHON):
 data: check-env $(FEATURES_FILE)
 
 $(FEATURES_FILE):
+ifeq ($(ARCHIVE),)
 	@test -n "$(RAW_DATA)" || \
-		(echo "ERROR: RAW_DATA is not set. Use: make data RAW_DATA=<path/to/reports/raw>" && exit 1)
+		(echo "ERROR: Set ARCHIVE=<archive-root> or RAW_DATA=<flat-dir>" && exit 1)
 	$(PYTHON) dataset/catapult_asic_to_numpy.py \
 		--input  $(RAW_DATA) \
 		--output $(DATA_OUT) \
 		--prefix catapult_asic
+else
+	$(PYTHON) dataset/catapult_asic_to_numpy.py \
+		--archive $(ARCHIVE) \
+		--exclude $(EXCLUDE) \
+		--output  $(DATA_OUT) \
+		--prefix  catapult_asic
+endif
 
 # ── split ─────────────────────────────────────────────────────────────────────
 split: check-env $(SPLIT_SENTINEL)

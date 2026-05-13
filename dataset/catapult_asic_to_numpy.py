@@ -263,13 +263,42 @@ class CatapultASICProcessor:
             return '', ''
         return self.save_numpy_arrays(X, y, output_dir, prefix)
 
+    def process_archive(self, archive_dir: str, output_dir: str, prefix: str = '',
+                        exclude: Optional[List[str]] = None) -> Tuple[str, str]:
+        """Collect run_*/reports/*.json from archive_dir, skipping runs whose names start with any prefix in exclude."""
+        exclude = exclude or []
+        run_dirs = sorted(glob.glob(os.path.join(archive_dir, 'run_*')))
+        file_paths = []
+        skipped = []
+        for run_dir in run_dirs:
+            run_name = os.path.basename(run_dir)
+            if any(run_name.startswith(ex) for ex in exclude):
+                skipped.append(run_name)
+                continue
+            file_paths.extend(sorted(glob.glob(os.path.join(run_dir, 'reports', '*.json'))))
+        if skipped:
+            print(f"Excluded {len(skipped)} run(s): {', '.join(skipped)}")
+        print(f"Found {len(file_paths)} JSON files across {len(run_dirs) - len(skipped)} run(s)")
+        X, y = self.process_files_to_numpy(file_paths)
+        if X.size == 0:
+            print("No data produced.")
+            return '', ''
+        return self.save_numpy_arrays(X, y, output_dir, prefix)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert Catapult ASIC JSON reports to numpy arrays.")
-    parser.add_argument("--input", required=True, help="Directory containing raw JSON reports")
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--input",   help="Flat directory containing raw JSON reports")
+    source.add_argument("--archive", help="Archive root with run_*/reports/*.json layout")
+    parser.add_argument("--exclude", nargs="*", default=[],
+                        help="Run name prefixes to skip when using --archive (e.g. run_20260504)")
     parser.add_argument("--output", required=True, help="Output directory for .npy files")
     parser.add_argument("--prefix", default="catapult_asic", help="Filename prefix (default: catapult_asic)")
     args = parser.parse_args()
 
     processor = CatapultASICProcessor()
-    processor.process_folder(args.input, args.output, args.prefix)
+    if args.archive:
+        processor.process_archive(args.archive, args.output, args.prefix, args.exclude)
+    else:
+        processor.process_folder(args.input, args.output, args.prefix)
