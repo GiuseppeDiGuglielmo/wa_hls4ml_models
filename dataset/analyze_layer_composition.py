@@ -275,11 +275,40 @@ def make_plots(results, n_layers, outdir):
 
 
 # ---------------------------------------------------------------------------
+# Build 1-layer throughput lookup for inference-time derivation
+# ---------------------------------------------------------------------------
+
+def build_thruput_lookup(archive_dir, exclude):
+    """
+    Return a dict keyed by (in_size, out_size, weight_bw, rf) -> thruput_cycles.
+    Built from all 1-layer designs in the archive. Activation type is excluded
+    from the key because throughput is driven by the Dense computation (N*M/RF),
+    not by the activation function. When multiple entries share the same key, the
+    most common value is used.
+    """
+    from collections import Counter
+    counts = defaultdict(Counter)
+    paths = _collect_json_paths(archive_dir, '1layer', exclude)
+    total = 0
+    for path in paths:
+        r = parse_report(path)
+        if r is None or len(r['layers']) != 1:
+            continue
+        lyr = r['layers'][0]
+        k = (lyr['in_size'], lyr['out_size'], lyr['weight_bw'], lyr['rf'])
+        counts[k][r['thruput']] += 1
+        total += 1
+    lookup = {k: ctr.most_common(1)[0][0] for k, ctr in counts.items()}
+    print(f"Throughput lookup: {total} 1-layer reports -> {len(lookup)} unique (in,out,bw,rf) configs")
+    return lookup
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="Check additive cost model in archive")
+    parser = argparse.ArgumentParser(description="Analyze layer composition in archive")
     parser.add_argument('--archive', required=True, help='Path to wa-hls4ml-catapult archive')
     parser.add_argument('--n-layers', type=int, default=2, choices=[2, 3],
                         help='Layer depth to validate (default: 2)')
@@ -289,7 +318,22 @@ def main():
     parser.add_argument('--plot', action='store_true', help='Save scatter plots')
     parser.add_argument('--plot-dir', default='additivity_plots',
                         help='Output directory for plots (default: additivity_plots)')
+    parser.add_argument('--build-lookup', action='store_true',
+                        help='Build and save a 1-layer throughput lookup table')
+    parser.add_argument('--lookup-out', default='thruput_lookup.pkl',
+                        help='Output path for the throughput lookup pickle (default: thruput_lookup.pkl)')
     args = parser.parse_args()
+
+    if args.build_lookup:
+        import pickle
+        print(f"Archive : {args.archive}")
+        print(f"Exclude : {args.exclude}")
+        print("\n--- Building throughput lookup ---")
+        lookup = build_thruput_lookup(args.archive, args.exclude)
+        with open(args.lookup_out, 'wb') as f:
+            pickle.dump(lookup, f)
+        print(f"Saved to: {args.lookup_out}")
+        return
 
     print(f"Archive : {args.archive}")
     print(f"Checking: {args.n_layers}-layer additivity")

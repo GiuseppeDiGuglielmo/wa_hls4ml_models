@@ -14,12 +14,14 @@ class FPGAGraphDataset(Dataset):
     Each sample is a neural network represented as a graph, where nodes are layers
     and edges represent the flow of data between layers.
     """
-    def __init__(self, features_path, labels_path, transform=None, pre_transform=None, stats=None, use_log_transform=False, log_epsilon=1e-6, log_shift=None):
+    def __init__(self, features_path, labels_path, transform=None, pre_transform=None, stats=None, use_log_transform=False, log_epsilon=1e-6, log_shift=None, label_cols=None):
         super(FPGAGraphDataset, self).__init__(None, transform, pre_transform) # root=None as we load from numpy
         print(f"Loading features from: {features_path}")
         self.features_np = np.load(features_path)
         print(f"Loading labels from: {labels_path}")
         self.labels_np = np.load(labels_path)
+        if label_cols is not None:
+            self.labels_np = self.labels_np[:, label_cols]
 
         # Log transformation settings
         self.use_log_transform = use_log_transform
@@ -413,7 +415,8 @@ def create_dataloaders_from_split_data(
     test_features_path, test_labels_path,
     stats_load_path=None, stats_save_path=None,
     batch_size=32, num_workers=0, pin_memory=True,
-    mode ="gnn", use_log_transform=False, log_epsilon=1e-6
+    mode ="gnn", use_log_transform=False, log_epsilon=1e-6,
+    label_cols=None,
 ):
     """
     Creates train, validation, and test DataLoaders from pre-split numpy arrays.
@@ -456,8 +459,9 @@ def create_dataloaders_from_split_data(
         print("Calculating normalization statistics from training data...")
         # Create training dataset to calculate stats
         train_dataset_temp = FPGAGraphDataset(
-            train_features_path, train_labels_path, 
-            stats=None, use_log_transform=use_log_transform, log_epsilon=log_epsilon
+            train_features_path, train_labels_path,
+            stats=None, use_log_transform=use_log_transform, log_epsilon=log_epsilon,
+            label_cols=label_cols,
         )
         stats = (train_dataset_temp.feature_means, train_dataset_temp.feature_stds,
                 train_dataset_temp.label_means, train_dataset_temp.label_stds)
@@ -472,16 +476,19 @@ def create_dataloaders_from_split_data(
     # Create datasets with shared normalization statistics
     print("Creating datasets with shared normalization statistics...")
     train_dataset = FPGAGraphDataset(
-        train_features_path, train_labels_path, 
-        stats=stats, use_log_transform=use_log_transform, log_epsilon=log_epsilon
+        train_features_path, train_labels_path,
+        stats=stats, use_log_transform=use_log_transform, log_epsilon=log_epsilon,
+        label_cols=label_cols,
     )
     val_dataset = FPGAGraphDataset(
-        val_features_path, val_labels_path, 
-        stats=stats, use_log_transform=use_log_transform, log_epsilon=log_epsilon
+        val_features_path, val_labels_path,
+        stats=stats, use_log_transform=use_log_transform, log_epsilon=log_epsilon,
+        label_cols=label_cols,
     )
     test_dataset = FPGAGraphDataset(
-        test_features_path, test_labels_path, 
-        stats=stats, use_log_transform=use_log_transform, log_epsilon=log_epsilon
+        test_features_path, test_labels_path,
+        stats=stats, use_log_transform=use_log_transform, log_epsilon=log_epsilon,
+        label_cols=label_cols,
     )
     
     # Get dataset info

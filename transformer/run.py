@@ -22,7 +22,14 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-5, help="Learning rate")
     parser.add_argument("--batch-size", type=int, default=512, help="Batch size")
     parser.add_argument("--base-dir", type=str, default=None, help="Directory with train/val/test split .npy files (overrides hardcoded default)")
-    args = parser.parse_args()    
+    parser.add_argument("--drop-throughput", action="store_true",
+                        help="Train on latency+area only; derive throughput analytically at inference via 1-layer lookup")
+    parser.add_argument("--thruput-lookup", type=str, default=None,
+                        help="Path to thruput_lookup.pkl (required with --drop-throughput)")
+    args = parser.parse_args()
+
+    if args.drop_throughput and not args.thruput_lookup:
+        raise ValueError("--thruput-lookup is required when --drop-throughput is set")
 
     timestamp = datetime.now().strftime("%m_%d_%H_%M")
 
@@ -84,6 +91,8 @@ def main():
         _stats_load = os.path.join(base_dir, "lognormalization_stats.npy")
         _stats_save = os.path.join(best_model_dir, "lognormalization_stats.npy")
 
+    _label_cols = [0, 1] if args.drop_throughput else None
+
     train_loader, val_loader, test_loader, node_feature_dim, num_targets = create_dataloaders_from_split_data(
             train_features_path=os.path.join(base_dir, "train_features.npy"),
             train_labels_path=os.path.join(base_dir, "train_labels.npy"),
@@ -98,7 +107,8 @@ def main():
             pin_memory=True if device.type == 'cuda' else False,
             mode=args.arch,
             use_log_transform=USE_LOG_TRANSFORM,
-            log_epsilon=LOG_EPSILON
+            log_epsilon=LOG_EPSILON,
+            label_cols=_label_cols,
         )
 
     # Set mode on datasets!
@@ -108,7 +118,9 @@ def main():
     # Derive output feature names from num_targets (fall back to generic names)
     default_output_features = ['CYCLES', 'FF', 'LUT', 'BRAM', 'DSP', 'II']
     asic_output_features    = ['LATENCY', 'AREA', 'THROUGHPUT']
-    if num_targets == len(asic_output_features):
+    if args.drop_throughput:
+        output_features = ['LATENCY', 'AREA']
+    elif num_targets == len(asic_output_features):
         output_features = asic_output_features
     elif num_targets <= len(default_output_features):
         output_features = default_output_features[:num_targets]
@@ -140,15 +152,44 @@ def main():
     y_true_denorm = test_loader.dataset.denormalize_labels(torch.tensor(y_true)).numpy()
     y_pred_denorm = test_loader.dataset.denormalize_labels(torch.tensor(y_pred)).numpy()
 
+    # Load test input features (raw, un-normalized) for model-type coloring and thruput derivation
+    test_features_np = np.load(os.path.join(base_dir, "test_features.npy"))  # (N, max_layers, 18)
+
+    # When throughput was excluded from training, derive it analytically from the
+    # 1-layer lookup and append as the third column so downstream metrics and plots
+    # see the full LATENCY / AREA / THROUGHPUT triple.
+    if args.drop_throughput:
+        import pickle
+        with open(args.thruput_lookup, 'rb') as f:
+            lut = pickle.load(f)
+
+        thruput_derived = []
+        for design in test_features_np:
+            rows = [row for row in design if not np.all(row == -1)]
+            layer_thruputs = []
+            for row in rows:
+                if int(row[9]) != 1:   # feature index 9 = layer_type; 1 = Dense
+                    continue
+                key = (int(row[0]), int(row[3]), int(row[6]), int(row[7]))
+                t = lut.get(key)
+                if t is not None:
+                    layer_thruputs.append(t)
+            thruput_derived.append(float(max(layer_thruputs)) if layer_thruputs else 0.0)
+
+        thruput_derived = np.array(thruput_derived).reshape(-1, 1)
+        y_pred_denorm = np.hstack([y_pred_denorm, thruput_derived])
+
+        # Actual throughput from the raw labels file (column index 2)
+        all_labels_raw = np.load(os.path.join(base_dir, "test_labels.npy"))
+        y_true_denorm = np.hstack([y_true_denorm, all_labels_raw[:, 2:3]])
+
+        output_features = ['LATENCY', 'AREA', 'THROUGHPUT']
+
     # Use for metrics and plotting:
     calculate_metrics(y_true_denorm, y_pred_denorm)
 
     # After obtaining y_true_denorm and y_pred_denorm:
     metrics_per_feature = calculate_metrics_per_feature(y_true_denorm, y_pred_denorm, output_features)
-
-    # ADDITION
-    # Load test input features to get model types for coloring
-    test_features_np = np.load(os.path.join(base_dir, "test_features.npy"))  # (num_samples, max_layers, num_features)
 
     # Breakdown by number of Dense layers
     print("\n\n--- Metrics by layer count ---")

@@ -11,9 +11,10 @@ DATA_OUT  ?= $(SCRATCH)/catapult_asic_data
 SPLIT_DIR ?= $(DATA_OUT)/split
 
 # ── Training hyper-parameters (tuned for Catapult ASIC dataset, 1728 samples) ─
-EPOCHS ?= 500
-LR     ?= 1e-4
-BATCH  ?= 32
+EPOCHS     ?= 500
+LR         ?= 1e-4
+BATCH      ?= 32
+TRAIN_ARGS ?=
 
 # ── Sentinel files ────────────────────────────────────────────────────────────
 FEATURES_FILE  := $(DATA_OUT)/catapult_asic_features.npy
@@ -118,7 +119,8 @@ train: check-env check-gpu $(SPLIT_SENTINEL)
 		--epochs $(EPOCHS) \
 		--lr $(LR) \
 		--batch-size $(BATCH) \
-		--base-dir $(SPLIT_DIR)
+		--base-dir $(SPLIT_DIR) \
+		$(TRAIN_ARGS)
 
 # ── all ───────────────────────────────────────────────────────────────────────
 all: env data split train
