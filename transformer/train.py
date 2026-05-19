@@ -102,6 +102,27 @@ def calculate_metrics_per_feature(y_true, y_pred, output_features=None):
         metrics_dict[output_features[i] if output_features else f'Feature_{i}'] = metrics
     return metrics_dict
 
+def calculate_metrics_by_layer_count(y_true, y_pred, features_np, output_features=None):
+    """Break down metrics by number of Dense layers (1, 2, 3, ...) in each design."""
+    # Count Dense layers (layer_type == 1, feature index 9) per design
+    layer_counts = []
+    for design in features_np:
+        valid = [row for row in design if not np.all(row == -1)]
+        n_dense = sum(1 for row in valid if int(row[9]) == 1)
+        layer_counts.append(n_dense)
+    layer_counts = np.array(layer_counts)
+
+    for n in sorted(np.unique(layer_counts)):
+        mask = layer_counts == n
+        if mask.sum() == 0:
+            continue
+        print(f"\n{'='*50}")
+        print(f"  {n}-layer designs  (n={mask.sum()})")
+        print(f"{'='*50}")
+        calculate_metrics(y_true[mask], y_pred[mask])
+        if output_features:
+            calculate_metrics_per_feature(y_true[mask], y_pred[mask], output_features)
+
 ## To use:
 # from train import train_model, test_model, calculate_metrics
 

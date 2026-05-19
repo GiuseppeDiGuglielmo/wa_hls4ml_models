@@ -5,7 +5,7 @@ import torch # type: ignore
 # from GNN.Dataset import *
 from GNN.Dataset2 import * # updated to load the split data
 from model import TransformerRegressor
-from train import train_model, test_model, calculate_metrics, calculate_metrics_per_feature
+from train import train_model, test_model, calculate_metrics, calculate_metrics_per_feature, calculate_metrics_by_layer_count
 from plot import plot_loss, plot_box_plots_symlog, plot_results_simplified
 import numpy as np # type: ignore
 import os
@@ -70,6 +70,20 @@ def main():
         base_dir = "../dataset/output/split_dataset/result/result/"  # UPDATE FOR THE JOB WITH NEW PATH
     # base_dir = "/jason-pvc/june_wa-hls4ml/result/" # IN THE PVC
 
+    best_model_dir = os.path.join(outdir, "best_model")
+    os.makedirs(best_model_dir, exist_ok=True)
+
+    # Stats live next to the model checkpoint so they always match.
+    # eval-only: load from the checkpoint's directory.
+    # training:  compute from training data, save to best_model_dir.
+    if args.eval_only:
+        _model_path = args.model_path or os.path.join(best_model_dir, "model.pt")
+        _stats_load = os.path.join(os.path.dirname(_model_path), "lognormalization_stats.npy")
+        _stats_save = None
+    else:
+        _stats_load = os.path.join(base_dir, "lognormalization_stats.npy")
+        _stats_save = os.path.join(best_model_dir, "lognormalization_stats.npy")
+
     train_loader, val_loader, test_loader, node_feature_dim, num_targets = create_dataloaders_from_split_data(
             train_features_path=os.path.join(base_dir, "train_features.npy"),
             train_labels_path=os.path.join(base_dir, "train_labels.npy"),
@@ -77,15 +91,14 @@ def main():
             val_labels_path=os.path.join(base_dir, "val_labels.npy"),
             test_features_path=os.path.join(base_dir, "test_features.npy"),
             test_labels_path=os.path.join(base_dir, "test_labels.npy"),
-            # stats_load_path=None,  # Will calculate from training data
-            stats_load_path=os.path.join(base_dir, "lognormalization_stats.npy"),
-            stats_save_path=os.path.join(base_dir, "lognormalization_stats.npy"),
+            stats_load_path=_stats_load,
+            stats_save_path=_stats_save,
             batch_size=BATCH_SIZE,
             num_workers=4,
             pin_memory=True if device.type == 'cuda' else False,
-            mode=args.arch, # different than Dataset2.py bc now already split and preprocessed
-            use_log_transform=USE_LOG_TRANSFORM,  # Add this line
-            log_epsilon=LOG_EPSILON                # Add this line
+            mode=args.arch,
+            use_log_transform=USE_LOG_TRANSFORM,
+            log_epsilon=LOG_EPSILON
         )
 
     # Set mode on datasets!
@@ -106,15 +119,8 @@ def main():
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     loss_fn = torch.nn.MSELoss()
 
-    best_model_dir = os.path.join(outdir, "best_model")
-    os.makedirs(best_model_dir, exist_ok=True)
-
     if args.eval_only:
-        # Load model from checkpoint
-        if args.model_path is None:
-            model_path = os.path.join(best_model_dir, "model.pt")
-        else:
-            model_path = args.model_path
+        model_path = args.model_path or os.path.join(best_model_dir, "model.pt")
         print(f"Loading model weights from: {model_path}")
         model.load_state_dict(torch.load(model_path, map_location=device))
     else:
@@ -124,10 +130,9 @@ def main():
         )
         # Plot Loss
         plot_loss(train_losses, val_losses, outdir=os.path.join(outdir, "plots"))
-
-    # Load best checkpoint for evaluation
-    model_path = os.path.join(best_model_dir, "model.pt")
-    model.load_state_dict(torch.load(model_path, map_location=device))
+        # Load best checkpoint for evaluation
+        model_path = os.path.join(best_model_dir, "model.pt")
+        model.load_state_dict(torch.load(model_path, map_location=device))
 
     # Test Evaluation
     y_true, y_pred = test_model(model, test_loader, device)
@@ -144,6 +149,10 @@ def main():
     # ADDITION
     # Load test input features to get model types for coloring
     test_features_np = np.load(os.path.join(base_dir, "test_features.npy"))  # (num_samples, max_layers, num_features)
+
+    # Breakdown by number of Dense layers
+    print("\n\n--- Metrics by layer count ---")
+    calculate_metrics_by_layer_count(y_true_denorm, y_pred_denorm, test_features_np, output_features)
 
     # # Extract strategies for each model (0: latency, 1: resource)
     # def get_strategies(features_np):
