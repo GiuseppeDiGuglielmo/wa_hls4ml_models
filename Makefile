@@ -16,6 +16,9 @@ LR         ?= 1e-4
 BATCH      ?= 32
 TRAIN_ARGS ?=
 
+# ── Throughput lookup (used by the default train target) ──────────────────────
+THRUPUT_LOOKUP ?= $(CURDIR)/dataset/thruput_lookup.pkl
+
 # ── Sentinel files ────────────────────────────────────────────────────────────
 FEATURES_FILE  := $(DATA_OUT)/catapult_asic_features.npy
 SPLIT_SENTINEL := $(SPLIT_DIR)/train_features.npy
@@ -24,19 +27,20 @@ SPLIT_SENTINEL := $(SPLIT_DIR)/train_features.npy
 # Set REQUIRE_GPU=0 to allow training on CPU (e.g. for a quick smoke-test)
 REQUIRE_GPU ?= 1
 
-.PHONY: help check-env check-gpu env data split train all clean
+.PHONY: help check-env check-gpu env data split train train-legacy all clean
 
 help:
 	@echo ""
 	@echo "Usage: make <target> [VAR=value ...]"
 	@echo ""
 	@echo "Targets:"
-	@echo "  env      Create venv and install extras  (run 'module load pytorch/2.8.0' first)"
-	@echo "  data     Convert raw Catapult JSON reports → numpy arrays"
-	@echo "  split    Split numpy arrays into train / val / test"
-	@echo "  train    Train the Transformer surrogate model"
-	@echo "  all      env + data + split + train"
-	@echo "  clean    Remove generated numpy arrays and split files"
+	@echo "  env           Create venv and install extras  (run 'module load pytorch/2.8.0' first)"
+	@echo "  data          Convert raw Catapult JSON reports → numpy arrays"
+	@echo "  split         Split numpy arrays into train / val / test"
+	@echo "  train         Train v2 model: latency+area learned, throughput derived analytically"
+	@echo "  train-legacy  Train v1 model: latency+area+throughput all learned (3 outputs)"
+	@echo "  all           env + data + split + train"
+	@echo "  clean         Remove generated numpy arrays and split files"
 	@echo ""
 	@echo "Variables (override with VAR=value on the command line):"
 	@printf "  %-12s  Archive root with run_*/reports/ layout (preferred)\n" "ARCHIVE"
@@ -114,6 +118,17 @@ $(SPLIT_SENTINEL): $(FEATURES_FILE)
 
 # ── train ─────────────────────────────────────────────────────────────────────
 train: check-env check-gpu $(SPLIT_SENTINEL)
+	cd transformer && $(PYTHON) run.py \
+		--arch transformer \
+		--epochs $(EPOCHS) \
+		--lr $(LR) \
+		--batch-size $(BATCH) \
+		--base-dir $(SPLIT_DIR) \
+		--drop-throughput \
+		--thruput-lookup $(THRUPUT_LOOKUP) \
+		$(TRAIN_ARGS)
+
+train-legacy: check-env check-gpu $(SPLIT_SENTINEL)
 	cd transformer && $(PYTHON) run.py \
 		--arch transformer \
 		--epochs $(EPOCHS) \
