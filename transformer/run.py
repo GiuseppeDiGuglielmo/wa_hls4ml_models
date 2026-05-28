@@ -26,6 +26,8 @@ def main():
                         help="Train on latency+area only; derive throughput analytically at inference via 1-layer lookup")
     parser.add_argument("--thruput-lookup", type=str, default=None,
                         help="Path to thruput_lookup.pkl (required with --drop-throughput)")
+    parser.add_argument("--resume", type=str, default=None,
+                        help="Path to model.pt checkpoint to warm-start training from")
     args = parser.parse_args()
 
     if args.drop_throughput and not args.thruput_lookup:
@@ -136,6 +138,9 @@ def main():
         print(f"Loading model weights from: {model_path}")
         model.load_state_dict(torch.load(model_path, map_location=device))
     else:
+        if args.resume:
+            print(f"Warm-starting from checkpoint: {args.resume}")
+            model.load_state_dict(torch.load(args.resume, map_location=device))
         # Training
         train_losses, val_losses = train_model(
             model, train_loader, val_loader, optimizer, loss_fn, device, num_epochs=num_epochs, verbose=True, checkpoint_path=best_model_dir

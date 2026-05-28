@@ -1,11 +1,12 @@
 #!/bin/bash
 #SBATCH -N 1
-#SBATCH -C gpu
-#SBATCH -q express_amsc
-#SBATCH --gpus-per-node=1
+#SBATCH -C cpu
+#SBATCH -q shared
 #SBATCH -A amsc011
-#SBATCH -t 06:00:00
-#SBATCH -J train_surrogate
+#SBATCH -c 2
+#SBATCH --mem=32G
+#SBATCH -t 02:00:00
+#SBATCH -J prepare_data
 #SBATCH -o /global/homes/g/gdg/research/projects/genesis/wa-hls4ml-paper/wa-hls4ml-models/slurm/logs/%x_%j.out
 #SBATCH -e /global/homes/g/gdg/research/projects/genesis/wa-hls4ml-paper/wa-hls4ml-models/slurm/logs/%x_%j.err
 
@@ -17,5 +18,4 @@ REPO=/global/homes/g/gdg/research/projects/genesis/wa-hls4ml-paper/wa-hls4ml-mod
 module load pytorch/2.8.0
 
 cd "${REPO}"
-
-make train EPOCHS=200 BATCH=256
+make clean data split ARCHIVE="${ARCHIVE}"
