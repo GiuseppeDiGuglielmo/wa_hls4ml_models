@@ -29,3 +29,17 @@ strategy/
 
 .vscode/
 
+
+# --- Arghya: personal reports / slides / generated figures (not for upstream) ---
+ALL_MODELS_PER_TARGET.md
+CATAPULT_MODEL_COMPARISON.md
+CATAPULT_SURROGATE_FULL_REPORT.md
+FINAL_REPORT.md
+HOW_THE_MODELS_WORK.md
+MODEL_ARCHITECTURES_DETAILED.md
+MODEL_ARCHITECTURES_VISUAL.md
+RESEARCH_NOTES_extrapolation.md
+SUMDECOMP_METHOD_REPORT.md
+SLIDES_Catapult_Surrogate.html
+figures/
+GNN/gnn_results_plots/

@@ -105,7 +105,7 @@ def main():
             stats_load_path=_stats_load,
             stats_save_path=_stats_save,
             batch_size=BATCH_SIZE,
-            num_workers=4,
+            num_workers=int(os.environ.get("WA_NUM_WORKERS", "16")),  # was 4; data-loader-bound, raise to use the node's cores
             pin_memory=True if device.type == 'cuda' else False,
             mode=args.arch,
             use_log_transform=USE_LOG_TRANSFORM,

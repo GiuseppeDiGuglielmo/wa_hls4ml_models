@@ -323,7 +323,7 @@ def plot_results_simplified(name, mpl_plots, y_test, y_pred, output_features, fo
             fontsize=18,
             ncol=len(legend_handles),
         )
-        title = f"Transformer Prediction Analysis on Test Set"
+        title = f"Predicted vs. True on Test Set"
         suptitle = fig.suptitle(title, fontsize=28, x=0.5, y=1.125)
         directory = os.path.join(folder_name, "plots")
         if not os.path.exists(directory):
