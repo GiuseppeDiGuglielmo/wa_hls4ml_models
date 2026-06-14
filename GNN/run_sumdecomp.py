@@ -58,6 +58,8 @@ def main():
                          "gatv2 = lui-gnn GATv2 (512/5/5, residual) + Σcᵢ; gatv2corr = gatv2 + bounded correction")
     ap.add_argument("--optimizer", choices=["adamw", "nadam"], default="adamw")
     ap.add_argument("--run-tag", default="", help="extra label appended to the output dir (avoids collisions)")
+    ap.add_argument("--finetune-from", default="", help="pretrained best_model dir or model.pt to init weights from (transfer learning)")
+    ap.add_argument("--freeze-encoder", action="store_true", help="freeze the GNN encoder; fine-tune only node_head")
     args = ap.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -118,7 +120,17 @@ def main():
     model = ModelCls(node_feature_dim=node_feature_dim, num_targets=num_targets, **mkw).to(device)
     print(f"variant: {args.variant} ({ModelCls.__name__})")
 
+    # transfer learning: initialize from a pretrained (e.g. 45nm) checkpoint
+    if args.finetune_from:
+        src = args.finetune_from
+        if os.path.isdir(src):
+            src = os.path.join(src, "model.pt")
+        model.load_state_dict(torch.load(src, map_location=device), strict=True)
+        print(f"FINE-TUNE: loaded pretrained weights from {src}")
+
     # init the per-node head bias near the data magnitude so the summed total starts sensibly
+    # (for fine-tuning this resets only the head's output bias to the NEW node's scale — the
+    #  ~log(area_ratio) shift — while keeping the pretrained encoder + head transform)
     raw_train = np.load(os.path.join(base_dir, "train_labels.npy"))
     raw_train = raw_train[:, _label_cols] if _label_cols is not None else raw_train
     feats_train = np.load(os.path.join(base_dir, "train_features.npy"))
@@ -126,12 +138,21 @@ def main():
     model.init_head_bias(raw_train.mean(axis=0), mean_layers)
     print(f"init head bias from mean_total={raw_train.mean(axis=0)} mean_layers={mean_layers:.2f}")
 
+    if args.freeze_encoder:
+        for name, p in model.named_parameters():
+            if not name.startswith("node_head"):
+                p.requires_grad_(False)
+        n_tr = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        n_all = sum(p.numel() for p in model.parameters())
+        print(f"FREEZE-ENCODER: training node_head only — {n_tr:,}/{n_all:,} params")
+
     n_params = sum(p.numel() for p in model.parameters())
     print(f"Model sumdecomp: {n_params:,} parameters")
+    trainable = [p for p in model.parameters() if p.requires_grad]
     if args.optimizer == "nadam":
-        optimizer = torch.optim.NAdam(model.parameters(), lr=args.lr, weight_decay=5e-6)
+        optimizer = torch.optim.NAdam(trainable, lr=args.lr, weight_decay=5e-6)
     else:
-        optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=5e-6)
+        optimizer = torch.optim.AdamW(trainable, lr=args.lr, weight_decay=5e-6)
     print(f"optimizer: {args.optimizer} | lr {args.lr}")
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=8, min_lr=1e-7)
     mse = nn.MSELoss()
