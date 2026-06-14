@@ -43,3 +43,7 @@ SUMDECOMP_METHOD_REPORT.md
 SLIDES_Catapult_Surrogate.html
 figures/
 GNN/gnn_results_plots/
+GNN/eval_results/
+STUDY_PLAN_depth_extrap.md
+REPORT_depth_extrap_1to5.md
+REPORT_depth_extrap_1to4.md

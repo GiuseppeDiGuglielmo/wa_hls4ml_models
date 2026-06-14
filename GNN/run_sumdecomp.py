@@ -57,13 +57,15 @@ def main():
                     help="plain = small GATv2 + Σcᵢ; corr = + bounded correction; "
                          "gatv2 = lui-gnn GATv2 (512/5/5, residual) + Σcᵢ; gatv2corr = gatv2 + bounded correction")
     ap.add_argument("--optimizer", choices=["adamw", "nadam"], default="adamw")
+    ap.add_argument("--run-tag", default="", help="extra label appended to the output dir (avoids collisions)")
     args = ap.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device} | arch: sumdecomp")
     timestamp = datetime.now().strftime("%m_%d_%H_%M")
     vsuffix = {"plain": "", "corr": "corr", "gatv2": "gatv2", "gatv2corr": "gatv2corr"}[args.variant]
-    tag = f"sumdecomp{vsuffix}_{args.optimizer}_{timestamp}_{args.epochs}epochs_{args.lr}lr_{args.batch_size}bs"
+    rtag = f"_{args.run_tag}" if args.run_tag else ""
+    tag = f"sumdecomp{vsuffix}_{args.optimizer}_{timestamp}_{args.epochs}epochs_{args.lr}lr_{args.batch_size}bs{rtag}"
     outdir = os.path.join(_THIS_DIR, "gnn_results_plots", tag)
     best_model_dir = os.path.join(outdir, "best_model")
     os.makedirs(best_model_dir, exist_ok=True)
