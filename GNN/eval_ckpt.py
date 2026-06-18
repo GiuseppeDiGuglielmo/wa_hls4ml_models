@@ -23,7 +23,8 @@ sys.path.insert(0, os.path.join(_REPO, "transformer"))
 sys.path.insert(0, os.path.join(_REPO, "transformer", "GNN"))
 
 from Models import (FPGA_GNN_SumDecomp, FPGA_GNN_SumDecompCorr,         # noqa: E402
-                    FPGA_GNN_GATv2_SumDecomp, FPGA_GNN_GATv2_SumDecompCorr)
+                    FPGA_GNN_GATv2_SumDecomp, FPGA_GNN_GATv2_SumDecompCorr,
+                    FPGA_GNN, FPGA_GNN_GATv2)  # pooling baselines (output NORMALIZED space)
 from Dataset2 import create_dataloaders_from_split_data                 # noqa: E402
 
 
@@ -39,7 +40,8 @@ def smape(a, p):
 def main():
     ap = argparse.ArgumentParser(description="Eval-only for sum-decomp checkpoints.")
     ap.add_argument("--ckpt-dir", required=True, help="run's best_model dir (model.pt + lognormalization_stats.npy)")
-    ap.add_argument("--variant", choices=["plain", "corr", "gatv2", "gatv2corr"], default="plain")
+    ap.add_argument("--variant", choices=["plain", "corr", "gatv2", "gatv2corr",
+                                           "poolsage", "poolgat"], default="plain")
     ap.add_argument("--features", required=True)
     ap.add_argument("--labels", required=True)
     ap.add_argument("--tag", default="eval")
@@ -66,11 +68,21 @@ def main():
     )
     test_loader.dataset.mode = "gnn"
 
-    mkw = (dict(hidden_dim=512, num_gnn_layers=5, num_attention_heads=5, mlp_hidden_dim=128, dropout_rate=0.2)
-           if args.variant in ("gatv2", "gatv2corr") else
-           dict(hidden_dim=256, num_gnn_layers=4, num_attention_heads=4, mlp_hidden_dim=128, dropout_rate=0.2))
+    # Pooling baselines (FPGA_GNN / FPGA_GNN_GATv2) predict in NORMALIZED log-space and need
+    # denormalize_labels() on the prediction; the SumDecomp models already emit LINEAR totals.
+    POOLING = ("poolsage", "poolgat")
+    if args.variant == "poolgat":   # run_gnn.py build_model('gatv2') config
+        mkw = dict(hidden_dim=512, num_gnn_layers=5, num_attention_heads=5, mlp_hidden_dim=512,
+                   dropout_rate=0.2, edge_dim=None, concat_heads=True, residual_connections=True)
+    elif args.variant == "poolsage":  # run_gnn.py build_model('gnn') config
+        mkw = dict(hidden_dim=256, num_gnn_layers=5, mlp_hidden_dim=128, dropout_rate=0.3)
+    elif args.variant in ("gatv2", "gatv2corr"):
+        mkw = dict(hidden_dim=512, num_gnn_layers=5, num_attention_heads=5, mlp_hidden_dim=128, dropout_rate=0.2)
+    else:
+        mkw = dict(hidden_dim=256, num_gnn_layers=4, num_attention_heads=4, mlp_hidden_dim=128, dropout_rate=0.2)
     ModelCls = {"plain": FPGA_GNN_SumDecomp, "corr": FPGA_GNN_SumDecompCorr,
-                "gatv2": FPGA_GNN_GATv2_SumDecomp, "gatv2corr": FPGA_GNN_GATv2_SumDecompCorr}[args.variant]
+                "gatv2": FPGA_GNN_GATv2_SumDecomp, "gatv2corr": FPGA_GNN_GATv2_SumDecompCorr,
+                "poolsage": FPGA_GNN, "poolgat": FPGA_GNN_GATv2}[args.variant]
     model = ModelCls(node_feature_dim=node_feature_dim, num_targets=num_targets, **mkw).to(device)
     model.load_state_dict(torch.load(ckpt_path, map_location=device))
     model.eval()
@@ -79,10 +91,12 @@ def main():
     with torch.no_grad():
         for batch in test_loader:
             batch = batch.to(device)
-            yp.append(model(batch).cpu().numpy())                      # LINEAR totals
+            yp.append(model(batch).cpu().numpy())                      # SumDecomp: LINEAR; pooling: NORMALIZED
             y = batch.y
             yt.append((y.squeeze(1) if y.dim() == 3 else y).cpu().numpy())
     yp = np.concatenate(yp, axis=0)
+    if args.variant in POOLING:  # invert z-score+log on the learned columns, same as the truth
+        yp = test_loader.dataset.denormalize_labels(torch.tensor(yp)).numpy()
     yt = test_loader.dataset.denormalize_labels(torch.tensor(np.concatenate(yt, axis=0))).numpy()
 
     # throughput via exact LUT (sanity + completeness)

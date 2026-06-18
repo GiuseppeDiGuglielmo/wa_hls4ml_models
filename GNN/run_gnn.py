@@ -103,6 +103,7 @@ def main():
     parser.add_argument("--resume", type=str, default=None)
     parser.add_argument("--num-workers", type=int, default=int(os.environ.get("WA_NUM_WORKERS", "8")))
     parser.add_argument("--patience", type=int, default=30, help="early-stopping patience (epochs)")
+    parser.add_argument("--run-tag", default="", help="extra label appended to the output dir (avoids parallel-seed collisions)")
     args = parser.parse_args()
 
     if args.drop_throughput and not args.thruput_lookup:
@@ -114,7 +115,8 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device} | arch: {args.arch}")
 
-    tag = f"{args.arch}_{timestamp}_{args.epochs}epochs_{args.lr}lr_{args.batch_size}bs"
+    rtag = f"_{args.run_tag}" if args.run_tag else ""
+    tag = f"{args.arch}_{timestamp}_{args.epochs}epochs_{args.lr}lr_{args.batch_size}bs{rtag}"
     outdir = os.path.join(_THIS_DIR, "gnn_results_plots", ("testing_only_" if args.eval_only else "") + tag)
     best_model_dir = os.path.join(outdir, "best_model")
     os.makedirs(best_model_dir, exist_ok=True)
