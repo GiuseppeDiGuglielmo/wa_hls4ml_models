@@ -18,4 +18,28 @@ module load pytorch/2.8.0
 
 cd "${REPO}"
 
-make train EPOCHS=200 BATCH=256
+EPOCHS=${EPOCHS:-200}
+BATCH=${BATCH:-256}
+RESUME=${RESUME:-""}
+CONTINUE_EPOCHS=${CONTINUE_EPOCHS:-0}
+
+TRAIN_ARGS=""
+if [ -n "${RESUME}" ]; then
+    # run.py executes from inside transformer/, so the path must be absolute
+    RESUME=$(realpath "${RESUME}")
+    TRAIN_ARGS="--resume ${RESUME}"
+fi
+
+make train EPOCHS="${EPOCHS}" BATCH="${BATCH}" TRAIN_ARGS="${TRAIN_ARGS}"
+
+# Auto-submit a resume job if requested (keeps each job within 6h wall-time)
+if [ "${CONTINUE_EPOCHS}" -gt 0 ]; then
+    LATEST_CKPT=$(ls -t "${REPO}/transformer/new_results_plots"/*/best_model/model.pt 2>/dev/null | head -1)
+    if [ -n "${LATEST_CKPT}" ]; then
+        echo "Submitting continuation: ${CONTINUE_EPOCHS} more epochs from ${LATEST_CKPT}"
+        RESUME="${LATEST_CKPT}" EPOCHS="${CONTINUE_EPOCHS}" \
+            sbatch "${REPO}/slurm/train_surrogate.sh"
+    else
+        echo "WARNING: no checkpoint found, skipping continuation"
+    fi
+fi

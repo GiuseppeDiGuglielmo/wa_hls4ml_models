@@ -5,7 +5,7 @@
 #SBATCH -A amsc011
 #SBATCH -c 2
 #SBATCH --mem=32G
-#SBATCH -t 02:00:00
+#SBATCH -t 04:00:00
 #SBATCH -J prepare_data
 #SBATCH -o /global/homes/g/gdg/research/projects/genesis/wa-hls4ml-paper/wa-hls4ml-models/slurm/logs/%x_%j.out
 #SBATCH -e /global/homes/g/gdg/research/projects/genesis/wa-hls4ml-paper/wa-hls4ml-models/slurm/logs/%x_%j.err
