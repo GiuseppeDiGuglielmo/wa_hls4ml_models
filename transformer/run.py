@@ -28,6 +28,8 @@ def main():
                         help="Path to thruput_lookup.pkl (required with --drop-throughput)")
     parser.add_argument("--resume", type=str, default=None,
                         help="Path to model.pt checkpoint to warm-start training from")
+    parser.add_argument("--freeze-encoder", action="store_true",
+                        help="Freeze tokenizer+transformer; only train the regression head (for fine-tuning on new process)")
     args = parser.parse_args()
 
     if args.drop_throughput and not args.thruput_lookup:
@@ -130,7 +132,6 @@ def main():
         output_features = [f'TARGET_{i}' for i in range(num_targets)]
 
     model = TransformerRegressor(output_dim=num_targets).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     loss_fn = torch.nn.MSELoss()
 
     if args.eval_only:
@@ -141,6 +142,16 @@ def main():
         if args.resume:
             print(f"Warm-starting from checkpoint: {args.resume}")
             model.load_state_dict(torch.load(args.resume, map_location=device))
+        if args.freeze_encoder:
+            for param in model.tokenizer.parameters():
+                param.requires_grad_(False)
+            for param in model.transformer.parameters():
+                param.requires_grad_(False)
+            trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+            print(f"Encoder frozen — training head only ({trainable:,} trainable params)")
+        optimizer = torch.optim.Adam(
+            filter(lambda p: p.requires_grad, model.parameters()), lr=learning_rate
+        )
         # Training
         train_losses, val_losses = train_model(
             model, train_loader, val_loader, optimizer, loss_fn, device, num_epochs=num_epochs, verbose=True, checkpoint_path=best_model_dir

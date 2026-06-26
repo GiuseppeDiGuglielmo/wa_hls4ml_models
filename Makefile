@@ -137,6 +137,23 @@ train-legacy: check-env check-gpu $(SPLIT_SENTINEL)
 		--base-dir $(SPLIT_DIR) \
 		$(TRAIN_ARGS)
 
+# ── finetune ──────────────────────────────────────────────────────────────────
+# Fine-tune on a new process (e.g. GF22nm): freeze encoder, train head only.
+# Requires RESUME=/path/to/base/model.pt
+finetune: check-env check-gpu $(SPLIT_SENTINEL)
+	@test -n "$(RESUME)" || (echo "ERROR: set RESUME=/path/to/model.pt" && exit 1)
+	cd transformer && $(PYTHON) run.py \
+		--arch transformer \
+		--epochs $(EPOCHS) \
+		--lr $(LR) \
+		--batch-size $(BATCH) \
+		--base-dir $(SPLIT_DIR) \
+		--drop-throughput \
+		--thruput-lookup $(THRUPUT_LOOKUP) \
+		--resume $(RESUME) \
+		--freeze-encoder \
+		$(TRAIN_ARGS)
+
 # ── all ───────────────────────────────────────────────────────────────────────
 all: env data split train
 
