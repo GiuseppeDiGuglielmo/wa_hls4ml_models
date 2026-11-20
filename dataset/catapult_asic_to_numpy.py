@@ -65,10 +65,21 @@ def parse_shape(shape_str: str) -> int:
     return int(nums[0]) if nums else 0
 
 
-def get_activation_type(layer_class: str, hls_class: Optional[str] = None) -> int:
-    """Map layer class (and optionally the HLSConfig class name) to activation_type int."""
-    # Prefer HLSConfig class name when available (resolves HardActivation ambiguity)
+def get_activation_type(layer_class: str, hls_class: Optional[str] = None,
+                        output_type: str = '') -> int:
+    """Map layer class (and optionally the HLSConfig class name) to activation_type int.
+
+    QKeras quantized sigmoid and tanh both reach the report as class
+    'HardActivation', in LayerSummary and in HLSConfig alike. They differ in the
+    layer's output type: tanh is signed (ac_fixed<W,1,true>, range -1..1) and
+    sigmoid unsigned (ac_fixed<W,0,false>, range 0..1).
+    """
     name = hls_class if hls_class else layer_class
+    if name == 'HardActivation' or layer_class == 'HardActivation':
+        m = re.search(r'ac_fixed<\s*\d+\s*,\s*-?\d+\s*,\s*(true|false)', output_type or '')
+        if m:
+            return ACTIVATION_MAPPING['tanh'] if m.group(1) == 'true' else ACTIVATION_MAPPING['sigmoid']
+        return 0
     return ACTIVATION_MAPPING.get(name, 0)
 
 
@@ -190,7 +201,8 @@ class CatapultASICProcessor:
                 row[FEATURES['activation_type']] = 0
             else:
                 row[FEATURES['layer_type']] = 0
-                row[FEATURES['activation_type']] = get_activation_type(layer_class, hls_class)
+                row[FEATURES['activation_type']] = get_activation_type(
+                    layer_class, hls_class, entry.get('Output Type', ''))
 
             # Unused spatial features (always 0 for dense-only)
             for f in ('filters', 'kernel_size', 'stride', 'padding', 'pooling', 'batchnorm'):
